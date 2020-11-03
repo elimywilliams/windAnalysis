@@ -7,6 +7,8 @@ library(forecast)
 library(zoo)
 options(digits = 15)
 
+ch4_lag <- 4
+
 #### equations 
 
 gcd.hf2 <- function(loc1deg, loc2deg) 
@@ -135,7 +137,6 @@ locDatSpeed2 <- locDatSpeed %>%
   ungroup() %>% 
   mutate(nearestMS = as.numeric(nearestMS),which2 = 'loc')
 
-ch4_lag <- 3
 ## BRING IN AERIS DATA FILE
 #AerisDat <- read_csv("~/Documents/archive_201001_120120_driving/Aeris.csv") %>% 
 AerisDat <- read_csv(paste(fileFolder,'/',AerisFileName,sep='')) %>% 
