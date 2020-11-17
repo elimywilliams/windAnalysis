@@ -26,7 +26,7 @@ gcd.hf2 <- function(loc1deg, loc2deg)
   return(d*1000) # Distance in m
 }
 
-calc_bearing <- function(loc1deg,loc2deg){
+calc_bearing_old <- function(loc1deg,loc2deg){
   long1r <- loc1deg[1]*pi/180
   lat1r <- loc1deg[2]*pi/180
   long2r <- loc2deg[1]*pi/180
@@ -40,6 +40,20 @@ calc_bearing <- function(loc1deg,loc2deg){
   return (theta)
 }
 
+calc_bearing <- function(loc1deg,loc2deg){
+  long1r <- loc1deg[1]*pi/180
+  lat1r <- loc1deg[2]*pi/180
+  long2r <- loc2deg[1]*pi/180
+  lat2r <- loc2deg[2]*pi/180
+  
+  Y <-  cos(lat2r) * sin(long2r - long1r)
+  X <-  cos(lat1r) * sin(lat2r) - (sin(lat1r) * cos(lat2r) * cos(long2r - long1r))
+  
+  theta <-  atan2(Y,X)
+  theta <-  ((theta*(180/pi) +360) %% (360))*pi/180
+  return (theta)
+  
+}
 
 #### info
 # timestamp is when the data was written onto the archiver
