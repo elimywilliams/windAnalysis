@@ -67,6 +67,7 @@ roundVal <- 3
 ## BRING IN WIND DATA FILE
 #WindData <- read_csv("~/Documents/archive_201001_120120_driving/WindData.csv") %>% 
 WindData <- read_csv(paste(fileFolder,'/',WindFileName,sep='')) %>% 
+  arrange(timestamp) %>% 
   mutate(obsNum = 1:n()) %>% 
   filter(obsNum > 300)%>%  ## remove 1st 30s ish of data
   select(-obsNum) %>% 
@@ -80,12 +81,48 @@ WindData <- read_csv(paste(fileFolder,'/',WindFileName,sep='')) %>%
   sample_n(1) %>% 
   ungroup()
 
+### BRING IN VESSEL HEADING FILE 
+vesselData <- read_csv(paste(fileFolder,'/',headingFileName,sep=''))  %>% 
+  mutate(locDevice = ifelse(deviceID == 16,'HEMISPHERE','AIRMAR')) %>% 
+  #filter(locDevice == 'HEMISPHERE') %>% 
+  group_by(locDevice) %>% 
+  arrange(timestamp) %>% 
+  mutate(obsNum = 1:n()) %>% 
+  ungroup() %>% 
+  filter(obsNum > 300)%>%  ## remove 1st 30s ish of data
+  select(-obsNum) %>% 
+  group_by(locDevice) %>% 
+  mutate(nearestMS = format(round(round(timestamp,roundVal),roundVal),nsmall = roundVal)) %>% 
+  ungroup() %>% 
+  group_by(nearestMS,locDevice) %>% 
+  mutate(totMS = n()) %>%   
+  ungroup() %>% 
+  group_by(locDevice) %>% 
+  mutate(step = timestamp - lag(timestamp,1)) %>% 
+  mutate(msstep = as.numeric(nearestMS) - as.numeric(lag(nearestMS,1),na.rm=T)) %>% 
+  ungroup() %>% 
+  rename(ts_ves = timestamp) %>% 
+  rename(dts_ves = deviceTimestamp,
+         nameves = name,
+         channelves = channel,
+         deviceIDves = deviceID,
+         stepves = step,
+         msstepves = msstep) %>% 
+  select(-totMS)
+
+vesselAirmar <- vesselData %>% filter(locDevice== "AIRMAR") %>% 
+  mutate(nearestMS=as.numeric(nearestMS)) %>% 
+  arrange(nearestMS) %>% 
+  mutate(nearestMS=as.character(nearestMS))
+
 
 ## BRING IN LOCATION DATA FILE
 #locData <- read_csv("~/Documents/archive_201001_120120_driving/Location.csv") %>% 
 locData <- read_csv(paste(fileFolder,'/',LocationFileName,sep='')) %>% 
   mutate(locDevice = ifelse(deviceID == 16,'HEMISPHERE','AIRMAR')) %>% 
   filter(locDevice == 'HEMISPHERE') %>% 
+  arrange(timestamp) %>% 
+  
   group_by(locDevice) %>% 
   mutate(obsNum = 1:n()) %>% 
   ungroup() %>% 
@@ -112,6 +149,7 @@ locData <- read_csv(paste(fileFolder,'/',LocationFileName,sep='')) %>%
 
 time_shift <- 1
 locDatSpeed <- locData %>% 
+  arrange(tsloc) %>% 
   mutate(num = 1:n()) %>% 
   rename(Latitude = latitude,Longitude = longitude) %>% 
   mutate(prev_lat = lag(Latitude,time_shift),
@@ -131,6 +169,7 @@ locDatSpeed <- locData %>%
   ungroup()
 
 locDatSpeed2 <- locDatSpeed %>% 
+  arrange(tsloc) %>% 
   mutate(num = 1:n()) %>% 
   #rename(Latitude = latitude,Longitude = longitude) %>% 
   mutate(prev_lat = lag(Latitude,time_shift),
@@ -155,6 +194,7 @@ locDatSpeed2 <- locDatSpeed %>%
 #AerisDat <- read_csv("~/Documents/archive_201001_120120_driving/Aeris.csv") %>% 
 AerisDat <- read_csv(paste(fileFolder,'/',AerisFileName,sep='')) %>% 
   select(-name,-channel,-deviceID) %>% 
+  arrange(timestamp) %>% 
   rename('adevTS' = devTimestamp,'C1C2' = `C1/C2`) %>% 
   mutate(obsNum = 1:n()) %>% 
   filter(obsNum > 5)%>%  ## remove 1st 30s ish of data
@@ -175,17 +215,22 @@ AerisDat <- read_csv(paste(fileFolder,'/',AerisFileName,sep='')) %>%
 firstLocTime <- as.numeric(locData$nearestMS[1])
 firstwindTime <- as.numeric(WindData$nearestMS[1])
 firstaerisTime <- as.numeric(AerisDat$nearestMS[1])
+firstHeadTime <- as.numeric(vesselAirmar$nearestMS[1])
 
 lastLocTime <- max(as.numeric(locData$nearestMS),na.rm=T)
 lastwindTime <- max(as.numeric(WindData$nearestMS),na.rm=T)
 lastaerisTime <- max(as.numeric(AerisDat$nearestMS),na.rm=T)
+lastHeadTime <- max(as.numeric(vesselAirmar$nearestMS),na.rm=T)
 
 
 ### CORRECTING FOR LOCATION DATA (ADDING IN MS)
 betweentimes <- seq(round(firstLocTime,roundVal),ceiling(lastLocTime),by=1*10^(-roundVal))
 joincols <- data.frame(nearestMS = as.character(betweentimes),which1='fulltime')
 #nearcols <- data.frame(nearestMS =as.character(nearestTimes),some = 'loc')
-bothties <- plyr::join(joincols,locDatSpeed %>% mutate(nearestMS = as.character(nearestMS)),type='full')
+bothties <- plyr::join(joincols,locDatSpeed %>% 
+                         mutate(nearestMS = as.character(nearestMS)),type='full') %>% 
+  mutate(nearestMS = as.character(nearestMS)) %>% 
+  arrange(nearestMS)
 
 ## INTERPOLATING THE LOCATION DATA
 loc_int <- bothties %>% 
@@ -218,7 +263,7 @@ joincols_wd <- data.frame(nearestMS = betweentimes_wd,windtime_full=T) %>%
 #nearcols_wd <- data.frame(nearestMS =as.character(nearestTimes),some = 'loc')
 
 bothties_wd <- plyr::join((joincols_wd %>% 
-                             mutate(nearestMS = as.character(nearestMS))),WindData2,type='full')
+                             mutate(nearestMS = as.character(nearestMS))),WindData2,type='full') 
 
 ### CORRECTING FOR AERIS DATA (ADDING IN MS)
 aerisDat2 <- AerisDat %>% 
@@ -258,6 +303,36 @@ aer_int <- bothties_aer %>%
 aer_int2 <- aer_int %>% 
   select(nearestMS,starts_with('fill'),true_aeris)
 
+
+### CORRECTING FOR HEADING DATA
+
+betweentimes_head <- seq(round(firstHeadTime,roundVal),ceiling(lastHeadTime),by=1*10^(-roundVal))
+joincols_head <- data.frame(nearestMS = betweentimes_head,headTime=T) %>% 
+  mutate(nearestMS = as.character(nearestMS))
+
+bothties_head <- plyr::join((joincols_head %>% 
+                              mutate(nearestMS = as.character(nearestMS))),vesselAirmar,type='full') %>% 
+  mutate(obsnum = 1:n())
+
+firstval_head <-  min(bothties_head[!is.na(bothties_head$heading),]$obsnum)
+
+head_int <- bothties_head %>% 
+  select(-nameves,-channelves,-deviceIDves,-sequenceID,-stepves,-msstepves) %>% 
+  #select(-step,-msstep,-batteryCharge) %>% 
+  filter(obsnum >= firstval_head) %>% 
+  group_by(nearestMS) %>% 
+  mutate(true_head = as.logical(ifelse(!is.na(heading),1,0))) %>% 
+  ungroup() %>% 
+  mutate(fill_ts_ves= zoo::na.locf(ts_ves)) %>% 
+  mutate(fill_dts= zoo::na.locf(dts_ves)) %>% 
+  mutate(fill_head= zoo::na.locf(heading)) %>% 
+  mutate(fill_deviation= zoo::na.locf(deviation)) %>% 
+  mutate(fill_variation= zoo::na.locf(variation)) %>% 
+  mutate(fill_bits= zoo::na.locf(bits)) 
+
+head_int2 <- head_int %>% 
+  select(nearestMS,starts_with('fill'),true_head)
+
 #   
 # loc_int$Latitude_interp <- as.numeric(na.interp(loc_int$Latitude))
 # loc_int$Longitude_interp <- as.numeric(na.interp(loc_int$Longitude))
@@ -283,15 +358,18 @@ t2 <- bothties_wd %>%
 t3 <- aer_int2 %>% 
   mutate(nearestMS = as.character(as.numeric(nearestMS))) 
 
+t4 <- head_int2 %>% 
+  mutate(nearestMS = as.character(as.numeric(nearestMS)))
+
 windLocation <- plyr::join(t1,t2,type='full')
 allDatCombined <- plyr::join(windLocation,t3,type='full')
-
+allDatCombined <- plyr::join(allDatCombined,t4,type='full')
 
 ## smallW_wind
 allDat_w_wind <- allDatCombined %>% 
   filter(!is.na(windReference)) %>% 
   select(-filltsloc,-filldtsloc,-timestamp,-deviceTimestamp,-name,-channel,-deviceID,
-         -sequenceID,-step,-msstep,-fillaets,-windtime_full,-totMS) %>% 
+         -sequenceID,-step,-msstep,-fillaets,-windtime_full,-totMS,-fill_ts_ves,-fill_dts) %>% 
   rename('Latitude' = Latitude_interp,
          'Longitude' = Longitude_interp,
          'Velocity' = fillVel,
@@ -310,7 +388,15 @@ allDat_w_wind <- allDatCombined %>%
          'CH4_Shift' = fillshiftCH4,
          'C2H6_Shift' = fillshiftC2H6,
          'TrueAerisReading' = true_aeris,
-         'timestamp' = nearestMS)
+         'timestamp' = nearestMS,
+         'VesselHeading' = fill_head,
+         "Deviation" = fill_deviation,
+         "Variation" = fill_variation,
+         "Bits" = fill_bits,
+         "TrueVesselHeading" = true_head
+         ) %>% 
+  mutate(timestamp = as.numeric(timestamp)) %>% 
+  arrange(timestamp)
 
 write.csv(allDat_w_wind,paste(finalFolder,'/',finalFilename,sep=''))
 rm(list=ls())
