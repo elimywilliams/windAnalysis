@@ -205,8 +205,11 @@ AerisDat <- read_csv(paste(fileFolder,'/',AerisFileName,sep='')) %>%
   ungroup() %>% 
   mutate(step = timestamp - lag(timestamp,1)) %>% 
   mutate(msstep = as.numeric(nearestMS) - as.numeric(lag(nearestMS,1),na.rm=T)) %>% 
-  mutate(shiftedCH4 = lag(CH4,ch4_lag),
-         shiftedC2H6 = lag(C2H6,ch4_lag)) %>% 
+  #mutate(shiftedCH4 = lag(CH4,ch4_lag),
+  #       shiftedC2H6 = lag(C2H6,ch4_lag)) %>% 
+  mutate(shiftedCH4 = lead(CH4,ch4_lag),
+         shiftedC2H6 = lead(C2H6,ch4_lag)) %>% 
+  
   select(-inletNumber)
 
 
