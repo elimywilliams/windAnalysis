@@ -7,7 +7,7 @@ library(forecast)
 library(zoo)
 options(digits = 15)
 
-ch4_lag <- 4
+ch4_lag <- 5
 
 #### equations 
 
