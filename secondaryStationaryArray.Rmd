@@ -1,0 +1,234 @@
+---
+title: "Stationary (with array) Comparison"
+author: "Emily Williams"
+date: "2/5/2021"
+#output: pdf_document
+output: 
+  pdf_document:
+    extra_dependencies: ["flafter","float"]
+    includes:
+      in_header: "latexInfo.tex"
+#fig_width: 6 
+#fig_height: 4 
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,message=F,warning=F)
+library(readr)
+library(ggplot2)
+library(dplyr)
+options(digits = 20)
+knitr::opts_chunk$set(fig.align = 'center', out.extra = "")
+knitr::opts_chunk$set(out.height = '70%',out.width = '70%')
+knitr::opts_chunk$set(fig.pos='H',fig.cap=" ")
+
+# first4 <- read_csv('data/feb4_comparisona.csv') %>% 
+#   mutate(type = 'stationaryArray') %>% 
+#   mutate(whichTest = 'a')
+# 
+# sec4 <- read_csv('data/feb4_comparisonb.csv') %>% 
+#   mutate(type = 'stationaryArray') %>% 
+#   mutate(whichTest = 'b')
+# 
+# feb4_comparison <- plyr::join(first4,sec4,type='full')
+# write_csv(feb4_comparison,'data/feb4_comparison.csv')
+
+comparisonDat <- read_csv('data/feb4_comparison.csv')
+```
+
+For this test, the car was parked next to the array. The purpose of this test is to 
+
+1. Determine the orientation of the stationary array
+2. Check matching of the data here as well
+
+```{r}
+fb_int <- 0.229366432445719914
+fb_fbair <- 0.837605709774421725
+fb_vel <- 0.011277852587223297
+
+ss_int <- -0.0026325593081763972
+ss_ssair <- 0.9140239295185210722
+ss_vel <- 0.0625135855856403799  
+
+comp1 <- comparisonDat %>% 
+  mutate(rnum = 1:n()) %>% 
+  group_by(rnum) %>% 
+     mutate(EW5 = as.numeric(EW5),NS5 = as.numeric(NS5),Z5 = as.numeric(Z5),
+          sideSideAirmar =as.numeric(avg_windSpeed)*sin(as.numeric(avg_windAngle)),
+          frontBackAirmar = -avg_windSpeed*cos(avg_windAngle)
+          ) %>%
+   mutate(airmar_ws = sqrt(frontBackAirmar^2+sideSideAirmar^2),
+          airmar_wd = atan2(frontBackAirmar,sideSideAirmar)) %>% 
+          #windmaster_ws = sqrt(EW5^2 + Z5^2),
+          #windmaster_wd = atan2(Z5,EW5)) %>%
+    mutate(frontBackAirmar_fit = fb_int + fb_fbair*frontBackAirmar + 
+           fb_vel * Velocity,
+         sideSideAirmar_fit = ss_int + ss_ssair*sideSideAirmar + 
+           ss_vel * Velocity
+         ) %>% 
+    mutate(airmar_ws_fit = sqrt(sideSideAirmar_fit^2 + frontBackAirmar_fit^2)) %>% 
+  mutate(airmar_wd_fit = atan2(frontBackAirmar_fit,sideSideAirmar_fit)) %>% 
+   ungroup() 
+  
+   rename('frontBackWindmaster' = Z5) %>%
+   rename('sideSideWindmaster' = EW5)
+
+```
+
+```{r}
+comp1small <- comp1 %>% 
+  dplyr::filter(whichTest=='b')
+plot(comp1small$Z2)
+plot(comp1small$NS2)
+plot(comp1small$EW2,type='l')
+
+comp1small$windmaster_ws_1 = sqrt(comp1small$EW1^2 + comp1small$NS1^2+comp1small$Z1^2)
+comp1small$windmaster_ws_2 = sqrt(comp1small$EW2^2 + comp1small$NS2^2+comp1small$Z2^2)
+comp1small$windmaster_ws_3 = sqrt(comp1small$EW3^2 + comp1small$NS3^2+comp1small$Z3^2)
+comp1small$windmaster_ws_4 = sqrt(comp1small$EW4^2 + comp1small$NS4^2+comp1small$Z4^2)
+comp1small$windmaster_ws_5 = sqrt(comp1small$EW5^2 + comp1small$NS5^2+comp1small$Z5^2)
+
+comp1small$windmaster_ws_1 = sqrt(comp1small$EW1^2 + comp1small$NS1^2)
+comp1small$windmaster_ws_2 = sqrt(comp1small$EW2^2 + comp1small$NS2^2)
+comp1small$windmaster_ws_3 = sqrt(comp1small$EW3^2 + comp1small$NS3^2)
+comp1small$windmaster_ws_4 = sqrt(comp1small$EW4^2 + comp1small$NS4^2)
+comp1small$windmaster_ws_5 = sqrt(comp1small$EW5^2 + comp1small$NS5^2)
+
+plot(comp1small$windmaster_ws_1)
+plot(comp1small$windmaster_ws_2,type='l')
+lines(comp1small$windmaster_ws_3,col='red')
+lines(comp1small$windmaster_ws_4,col='purple')
+lines(comp1small$windmaster_ws_5,col='darkgreen')
+
+
+plot(comp1small$airmar_ws - comp1small$windmaster_ws_2,type='l')
+plot(comp1small$airmar_ws - comp1small$windmaster_ws_3,col='red')
+plot(comp1small$airmar_ws - comp1small$windmaster_ws_4,col='purple')
+plot(comp1small$airmar_ws - comp1small$windmaster_ws_5,col='darkgreen')
+
+
+
+plot(sqrt(comp1small$EW2^2 + comp1small$NS2^2+comp1small$Z2^2),ylim=c(0,20),type='l',xlab='Index',ylab='Total Wind Speed')
+
+
+
+lines(comp1small$airmar_ws,col='red')
+plot(comp1small$frontBackAirmar,col='red')
+plot(comp1small$sideSideAirmar,col='blue')
+
+diffFit <- lm(-comp1small$windmaster_ws + comp1small$airmar_ws~comp1small$windmaster_ws)
+plot(y=comp1small$airmar_ws-comp1small$windmaster_ws,
+     x= comp1small$windmaster_ws,xlim=c(0,15))
+lines(x=c(0,15),y=c(diffFit$coefficients[1],diffFit$coefficients[1]+
+                      diffFit$coefficients[2]*15),col='red')
+
+par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
+newFit <- lm(windmaster_ws~airmar_ws,data = comp1small)
+plot(y=comp1small$windmaster_ws,x=comp1small$airmar_ws,
+     xlim=c(0,20),ylim=c(0,20),pch=20,
+     xlab='Airmar Total WindSpeed',
+     ylab='Windmaster Total WindSpeed',
+     main='Comparison, Airmar and Windmaster, Both Stationary')
+lines(x=c(0,20),y=c(newFit$coefficients[1],newFit$coefficients[1]+
+                      newFit$coefficients[2]*20),col='purple')
+lines(x=c(0,20),y=c(0,20),col='red')
+text(x=0,y=15,paste('Intercept: ',round(newFit$coefficients[1],2),
+                    '\n Slope: ',round(newFit$coefficients[2],2),sep=''),col='red')
+
+```
+
+```{r}
+plot(comp1small$airmar_ws_fit,comp1small$windmaster_ws_2,xlim=c(0,16),
+     ylim=c(0,16))
+
+hist(comp1small$airmar_ws-comp1small$windmaster_ws_4)
+lines(y=c(0,5000),x=c(mean(comp1small$airmar_ws-comp1small$windmaster_ws_4,na.rm = T),mean(comp1small$airmar_ws-comp1small$windmaster_ws_4,na.rm=T)),col='red')
+hist(comp1small$airmar_ws_fit-comp1small$windmaster_ws_4)
+
+
+
+```
+
+```{r}
+comp1small %>% 
+  ggplot(aes(y=windmaster_ws_2,x=airmar_ws_fit))+geom_point()+facet_wrap(~whichTest)+theme_bw() + geom_abline(slope=1,intercept=0,col='red')
+
+
+comp1small %>% 
+  #dplyr::filter(airmar_ws_fit < 5) %>% 
+  ggplot(aes(y=windmaster_ws_2-airmar_ws_fit,x=airmar_ws_fit))+geom_point()+facet_wrap(~whichTest)+theme_bw() + geom_abline(slope=1,intercept=0,col='red')
+
+comp1small %>% 
+  #dplyr::filter(airmar_ws_fit < 5) %>% 
+  ggplot(aes(y=windmaster_ws_2-airmar_ws_fit,x=rnum))+geom_point()+facet_wrap(~whichTest,scales='free_x')+theme_bw() 
+
+comp1small %>% 
+  #dplyr::filter(airmar_ws_fit < 5) %>% 
+  ggplot(aes(y=windmaster_ws_2-airmar_ws_fit,x=windmaster_ws_2))+geom_point()+facet_wrap(~whichTest,scales='free_x')+theme_bw() 
+
+
+
+
+
+```
+
+```{r}
+totFit_new <- lm(airmar_ws ~ windmaster_ws_2,data = comp1small)
+plot(y=comp1small$airmar_ws,x=comp1small$windmaster_ws_2,
+     xlab='Windmaster Total WS',ylab='Airmar Total WS',
+     main='Total wind speed, airmar & windmaster array (stationary)',
+     xlim=c(0,20),ylim=c(0,20))
+lines(y=c(-15,15),x=c(-15,15),col='red')
+lines(y=c(totFit_new$coefficients[1]+totFit_new$coefficients[2]*0,
+          totFit_new$coefficients[1]+totFit_new$coefficients[2]*15),
+      x=c(0,15),col='purple')
+text(x=18,y=16,paste('Intercept: ',round(totFit_new$coefficients[1],2),
+                     '\n Slope: ', round(totFit_new$coefficients[2],2)),
+     col='purple')
+```
+
+```{r}
+totFit_new_fit <- lm(airmar_ws_fit ~ windmaster_ws_2,data = comp1small)
+plot(y=comp1small$airmar_ws_fit,x=comp1small$windmaster_ws_2,
+     xlab='Windmaster Total WS',ylab='Airmar Total WS',
+     main='Total wind speed, airmar & windmaster array (stationary) \n with previous model fit added',
+     xlim=c(0,20),ylim=c(0,20))
+lines(y=c(-15,15),x=c(-15,15),col='red')
+lines(y=c(totFit_new_fit$coefficients[1]+totFit_new_fit$coefficients[2]*0,
+          totFit_new_fit$coefficients[1]+totFit_new_fit$coefficients[2]*15),
+      x=c(0,15),col='purple')
+text(x=18,y=16,paste('Intercept: ',round(totFit_new_fit$coefficients[1],2),
+                     '\n Slope: ', round(totFit_new_fit$coefficients[2],2)),
+     col='purple')
+```
+
+```{r}
+diffFit_new <- lm(airmar_ws -windmaster_ws_2~ airmar_ws,data = comp1small)
+plot(y=comp1small$airmar_ws-comp1small$windmaster_ws_2,
+     x= comp1small$airmar_ws,
+     ylab='Airmar - Windmaster WS',xlab='Airmar Total WS',
+     main='Difference wind speed, \n airmar & windmaster array (stationary) vs. airmar ws',
+     xlim=c(0,20),ylim=c(-5,15))
+#lines(y=c(-15,15),x=c(-15,15),col='red')
+lines(y=c(diffFit_new$coefficients[1]+diffFit_new$coefficients[2]*0,
+          diffFit_new$coefficients[1]+diffFit_new$coefficients[2]*20),
+      x=c(0,20),col='purple')
+text(x=3,y=12,paste('Intercept: ',round(diffFit_new$coefficients[1],2),
+                     '\n Slope: ', round(diffFit_new$coefficients[2],2)),
+     col='purple')
+```
+
+```{r}
+diffFit_new <- lm(airmar_ws -windmaster_ws_2~ airmar_ws,data = comp1small)
+plot(y=comp1small$airmar_ws-comp1small$windmaster_ws_2,
+     x= comp1small$rnum,
+     ylab='Airmar - Windmaster WS',xlab='Index',
+     main='Difference wind speed, \n airmar & windmaster array (stationary)',
+     ylim=c(-5,15),pch=20)
+#lines(y=c(-15,15),x=c(-15,15),col='red')
+lines(y=c(mean(comp1small$airmar_ws-comp1small$windmaster_ws_2,na.rm=T),mean(comp1small$airmar_ws-comp1small$windmaster_ws_2,na.rm=T)),
+      x=c(0,15000),col='purple')
+text(x=3000,y=12,paste('Mean Difference:',round(mean(comp1small$airmar_ws-comp1small$windmaster_ws_2,na.rm=T),2),'\n Median Difference:',round(median(comp1small$airmar_ws-comp1small$windmaster_ws_2,na.rm=T),2),sep=''),
+     col='purple')
+```
+

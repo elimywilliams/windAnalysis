@@ -1,0 +1,240 @@
+---
+title: "Controlled Release (2/2/21) Wind Comparison"
+author: "Emily Williams"
+date: "2/6/2021"
+#output: pdf_document
+output: 
+  pdf_document:
+    extra_dependencies: ["flafter","float"]
+    includes:
+      in_header: "latexInfo.tex"
+#fig_width: 6 
+#fig_height: 4 
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,message=F,warning=F)
+library(readr)
+library(ggplot2)
+library(dplyr)
+library(zoo)
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(gganimate)
+library(metR)
+library(ggmap)
+library(magick)
+options(digits = 20)
+knitr::opts_chunk$set(fig.align = 'center', out.extra = "")
+knitr::opts_chunk$set(out.height = '70%',out.width = '70%')
+knitr::opts_chunk$set(fig.pos='H',fig.cap=" ")
+```
+
+```{r}
+releasePt0202 <- read_csv("data/ControlledRelease/FinalAggregated_210202_133844.csv")
+avgLat <- mean(releasePt0202$Latitude)
+avgLon <- mean(releasePt0202$Longitude)
+
+#write_csv(combinedSets,'data/ControlledRelease/bothData0202.csv')
+
+releaseData <- read_csv('data/ControlledRelease/bothData0202.csv')
+```
+
+```{r}
+fb_int <- 0.24945980561648678497
+ss_int <- -0.13000000000000000444
+fb_fbair <- 0.83173315056714880456
+ss_ssair <- 0.83799999999999996714
+fb_vel <- 0
+ss_vel <- 0
+
+velTerm <- .95
+
+releaseComp <- releaseData %>% 
+  mutate(rnum = 1:n()) %>% 
+  group_by(rnum) %>% 
+    mutate(airmar_x = avg_windSpeed * cos(avg_windAngle),
+         airmar_y = avg_windSpeed * sin(avg_windAngle),
+         airmar_wd_fixed = atan2(airmar_x,airmar_y),
+         airmar_fb_fixed = -avg_windSpeed*sin(airmar_wd_fixed),
+         airmar_ss_fixed = -avg_windSpeed*cos(airmar_wd_fixed),
+         EW5 = as.numeric(EW5),NS5 = as.numeric(NS5),Z5 = as.numeric(Z5),
+         frontBackWindmaster = NS5,
+         sideSideWindmaster = -EW5,
+         windmaster_ws= sqrt(frontBackWindmaster^2 + sideSideWindmaster^2),
+         airmar_ws = sqrt(airmar_ss_fixed^2+airmar_fb_fixed^2)) %>% 
+      mutate(frontBackAirmar_fit = fb_int + fb_fbair*airmar_fb_fixed + 
+           fb_vel * Velocity,
+         sideSideAirmar_fit = ss_int + ss_ssair*airmar_ss_fixed + 
+           ss_vel * Velocity
+         ) %>% 
+    mutate(airmar_ws_fit = sqrt(sideSideAirmar_fit^2 + frontBackAirmar_fit^2)) %>% 
+  mutate(airmar_wd_fit = atan2(-frontBackAirmar_fit,-sideSideAirmar_fit)) %>% 
+  mutate(windMaster_wd =atan2(-frontBackWindmaster,-sideSideWindmaster) ) %>% 
+  mutate(SLOW_VELOCITY = ifelse(Velocity < 2.5,TRUE,FALSE)) %>% 
+  mutate(Bearing_cor = ifelse(SLOW_VELOCITY,NA,Bearing)) %>% 
+  ungroup() %>% 
+  tidyr::fill(Bearing_cor) 
+```
+
+```{r,eval=F}
+releaseComp %>% 
+  #dplyr::filter(Velocity < .0001) %>% 
+  ggplot(aes(x=Velocity,y=airmar_ws_fit-windmaster_ws,col=Bearing))+geom_point()+
+  geom_point(aes(x=Velocity,y=airmar_ws-windmaster_ws),col='red')
+  #geom_point(aes(x=rnum,y=windmaster_ws),col='red')
+
+```
+
+
+```{r}
+releaseCompFix <- releaseComp %>% 
+  group_by(rnum) %>% 
+  mutate(frontBackAirmar_removeVelocity = airmar_fb_fixed + velTerm*Velocity) %>% 
+  mutate(airmar_ws_relcar = sqrt(frontBackAirmar_removeVelocity^2+
+                                   airmar_ss_fixed^2),
+         airmar_wd_relcar = atan2(-frontBackAirmar_removeVelocity,
+                                  -airmar_ss_fixed)
+         ) %>% 
+  ## slightly sketchy part
+  mutate(airmar_wd_relground = (airmar_wd_relcar - Bearing_cor)%%(2*pi),
+         airmar_ns = -airmar_ws_relcar*sin(airmar_wd_relground),
+         airmar_ew = -airmar_ws_relcar*cos(airmar_wd_relground)
+         ) %>% 
+  mutate(windmaster_wd_pos = ifelse(windMaster_wd < 0 ,
+                                    2*pi + windMaster_wd,windMaster_wd)) %>% 
+  ungroup()
+
+
+
+
+
+```
+
+```{r}
+plot(releaseCompFix$airmar_wd_relground*180/pi,pch=20)
+points(releaseCompFix$windmaster_wd_pos*180/pi,col='red')
+
+#releaseCompFix %>% 
+#  mutate(airroll_new=rollapply(airmar_ws_relcar,50,median,align='center',fill=NA)) %>%
+#  ggplot(aes(x=rnum,y=airroll_new))+geom_point()+
+#  geom_point(aes(x=rnum,y=windmaster_ws),col='red')
+
+#releaseCompFix %>% 
+#  dplyr::filter(rnum < 100) %>% 
+#  mutate(airroll_new=rollapply(airmar_ws_relcar,100,median,align='center',fill=NA)) %>%
+#  ggplot(aes(x=rnum,y=airroll_new))+geom_point()+
+#  geom_point(aes(x=rnum,y=windmaster_ws),col='red')
+
+```
+
+```{r,eval=F}
+start <- 1300
+stop <- 2300
+
+plot(y=releaseCompFix$airmar_ws_relcar[start:stop],x=releaseComp$rnum[start:stop],col='black',pch=20,ylim=c(0,10))
+points(y=releaseCompFix$windmaster_ws[start:stop],x=releaseComp$rnum[start:stop],col='purple',pch=20)
+points(y=releaseCompFix$airmar_ws_fit[start:stop],x=releaseComp$rnum[start:stop],col='red',pch=20)
+
+```
+
+```{r}
+for (i in 1:11){
+start <- 1 + (i-1)*3000
+stop <- i*3000
+
+plot(y=releaseCompFix$airmar_wd_relground[start:stop]*180/pi,x=releaseComp$nearest10hz[start:stop],col='black',pch=20,ylim=c(0,360),
+     main=paste('Start: ',start,'. Stop: ',stop,sep=''),
+     ylab='Wind Direction',xlab='time')
+points(y=releaseCompFix$windmaster_wd_pos[start:stop]*180/pi,x=releaseComp$nearest10hz[start:stop],col='purple',pch=20)
+lines(x=releaseComp$nearest10hz[start:stop],y=rep(0,3000),lty='dashed',col='gray')
+lines(x=releaseComp$nearest10hz[start:stop],y=rep(90,3000),lty='dashed',col='gray')
+lines(x=releaseComp$nearest10hz[start:stop],y=rep(180,3000),lty='dashed',col='gray')
+lines(x=releaseComp$nearest10hz[start:stop],y=rep(270,3000),lty='dashed',col='gray')
+}
+points(y=releaseCompFix$airmar_ws_fit[start:stop],x=releaseComp$rnum[start:stop],col='red',pch=20)
+
+```
+
+```{r,eval=F}
+releaseCompFix %>% 
+  #dplyr::filter(rnum >= 1) %>% 
+  #dplyr::filter(rnum <= 1000) %>% 
+  dplyr::filter(Velocity <2.5) %>% 
+  ggplot(aes(x=rnum,y=airmar_wd_relground*180/pi))+geom_point()
+
+plot(y=releaseCompFix$airmar_wd_relground[start:stop]*180/pi,x=releaseComp$rnum[start:stop])
+
+```
+
+```{r}
+calcQ1 <- function(vec){
+  return(quantile(vec,.25,na.rm=T))
+}
+calcQ1 <- function(airmar_ws_relcar) quantile(airmar_ws_relcar,.5,na.rm=T)
+
+
+releaseCompFix1 <- releaseCompFix %>% 
+    mutate(airmar_ws_roll=rollapply(airmar_ws_relcar,600,calcQ1,align='left',fill=NA)) 
+
+releaseCompFix1 <- releaseCompFix %>% 
+    mutate(airmar_ws_roll=rollapply(airmar_ws_relcar,300,mean,align='left',fill=NA)) 
+
+
+for (i in 1:11){
+start <- 1 + (i-1)*3000
+stop <- i*3000
+
+plot(y=releaseCompFix1$airmar_ws_relcar[start:stop],x=releaseCompFix1$nearest10hz[start:stop],col='black',pch=20,ylim=c(0,15),
+     main=paste('Start: ',start,'. Stop: ',stop,sep=''),
+     ylab='Wind Speed',xlab='time')
+points(y=releaseCompFix1$windmaster_ws[start:stop],x=releaseCompFix1$nearest10hz[start:stop],col='purple',pch=20)
+points(y=releaseCompFix1$airmar_ws_fit[start:stop],x=releaseCompFix1$nearest10hz[start:stop],col='red',pch=20)
+points(y=releaseCompFix1$airmar_ws_roll[start:stop],x=releaseCompFix1$nearest10hz[start:stop],col='darkgreen',pch=20)
+
+}
+
+#releaseCompFix1 %>% 
+#  dplyr::filter(rnum > 30000) %>% 
+#  dplyr::filter(rnum < 33000) %>% 
+#  ggplot(aes(y=airmar_ws_relcar,x=rnum,col=log(Velocity)))+geom_point()
+
+```
+
+```{r}
+plot1 <- releaseCompFix1 %>% 
+  dplyr::filter(rnum %% 50 == 0) %>% 
+  #dplyr::filter(rnum < 20000) %>% 
+  #dplyr::filter(rnum > 10000-20) %>% 
+  ggplot() +
+  geom_vector(aes(x=1,y=1,mag = airmar_ws_relcar,
+                  angle = airmar_wd_relground*180/pi))+
+  geom_vector(aes(x=1,y=3,mag = windmaster_ws,
+                  angle = windmaster_wd_pos*180/pi),col='red')+
+ theme_bw() + xlim(c(0,3.5)) + ylim(c(0,4))+
+  annotate("text", x = 2.5, y=1,label="Airmar (corrected, on vehicle)")+
+  annotate("text", x = 2.5, y=3,label="Windmaster (stationary)")+
+  theme(axis.text=element_blank(),legend.position = 'bottom')+transition_states(states = rnum,transition_length = 1,state_length = 1 )+  enter_fade()    + exit_shrink() 
+
+
+
+gif1 <- animate(plot1, width = 600, height = 500,nframes = 660)
+mgif_1 <- image_read(gif1)
+
+plot2 <- releaseCompFix1 %>% 
+  dplyr::filter(rnum %% 50 == 0) %>% 
+  #dplyr::filter(rnum < 20000) %>% 
+  #dplyr::filter(rnum > 10000-20) %>% 
+  ggplot() +
+  geom_vector(aes(x=Longitude,y=Latitude,mag = airmar_ws_relcar,
+                  angle = airmar_wd_relground*180/pi))+
+  geom_vector(aes(x=LeakLon,y=LeakLat,mag = windmaster_ws,
+                  angle = windmaster_wd_pos*180/pi),col='red')+
+ theme_bw() +
+  theme(axis.text=element_blank(),legend.position = 'bottom')+transition_states(states = rnum,transition_length = 1,state_length = 1 )+  enter_fade()    + exit_shrink() 
+gif2 <- animate(plot2, width = 600, height = 500,nframes = 660)
+mgif_2 <- image_read(gif2)
+
+
+```
